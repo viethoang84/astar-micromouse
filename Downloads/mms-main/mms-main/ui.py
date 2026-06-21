@@ -75,8 +75,8 @@ class MazeApp:
         self.step_id  = None
         self.steps    = 0
 
-        # Che do ve
-        self.draw_mode  = False
+        # Che do tuong tac (None | "draw" | "wall" | "goal")
+        self.mode       = None
         self.draw_value = True
 
         # Subprocess C++
@@ -120,10 +120,15 @@ class MazeApp:
         mkbtn(r2, "Generate Maze", self.generate_maze, "#4caf50", "white")
         mkbtn(r2, "Run A*",        self.run_astar,     "#2196f3", "white")
         mkbtn(r2, "Stop",          self.stop,           "#f44336", "white")
-        self.draw_btn = tk.Button(r2, text="Ve: TAT", font=("Arial", 10),
-                                  bg="#aaaaaa", fg="white", padx=5,
-                                  command=self.toggle_draw)
-        self.draw_btn.pack(side=tk.LEFT, padx=2)
+        tk.Label(r2, text=" |", font=("Arial", 10), fg="#aaaaaa").pack(side=tk.LEFT)
+        self.mode_btns = {}
+        for mode_key, label in [("draw", "Ve map"), ("wall", "Them/Xoa tuong"), ("goal", "Chon dich")]:
+            btn = tk.Button(r2, text=label, font=("Arial", 10),
+                            bg="#aaaaaa", fg="white", padx=5,
+                            command=lambda k=mode_key: self.toggle_mode(k))
+            btn.pack(side=tk.LEFT, padx=2)
+            self.mode_btns[mode_key] = btn
+        tk.Label(r2, text=" |", font=("Arial", 10), fg="#aaaaaa").pack(side=tk.LEFT)
         mkbtn(r2, "Reset shape", self.reset_shape)
         mkbtn(r2, "Xoa dich",    self.clear_goal)
         tk.Label(r2, text="  Toc do:", font=("Arial", 10)).pack(side=tk.LEFT)
@@ -200,38 +205,39 @@ class MazeApp:
     def _lclick(self, e):
         x, y = self._p2c(e.x, e.y)
         if not self._valid(x, y): return
-        if self.draw_mode:
+        if self.mode == "draw":
             self.draw_value = not self.active[x][y]
             self.active[x][y] = self.draw_value
             self._draw()
-        else:
+        elif self.mode == "wall":
             wd = self._wall_hit(e.x, e.y)
             if wd is not None:
                 self._toggle_wall(x, y, wd)
-            elif self.active[x][y]:
+        elif self.mode == "goal":
+            if self.active[x][y]:
                 self.goal = (x, y)
                 self.sv.set(f"Dich: ({x},{y}). Nhan Run A*.")
                 self._draw()
 
     def _ldrag(self, e):
         x, y = self._p2c(e.x, e.y)
-        if self._valid(x, y) and self.draw_mode:
+        if self._valid(x, y) and self.mode == "draw":
             self.active[x][y] = self.draw_value
             self._draw()
 
     def _rclick(self, e):
         x, y = self._p2c(e.x, e.y)
         if not self._valid(x, y): return
-        if self.draw_mode:
+        if self.mode == "draw":
             self.draw_value = False
             self.active[x][y] = False
             self._draw()
-        else:
+        elif self.mode == "goal":
             self.clear_goal()
 
     def _rdrag(self, e):
         x, y = self._p2c(e.x, e.y)
-        if self._valid(x, y) and self.draw_mode:
+        if self._valid(x, y) and self.mode == "draw":
             self.active[x][y] = False
             self._draw()
 
@@ -283,14 +289,16 @@ class MazeApp:
         self.goal = None
         self.generate_maze()
 
-    def toggle_draw(self):
-        self.draw_mode = not self.draw_mode
-        if self.draw_mode:
-            self.draw_btn.config(text="Ve: BAT", bg="#ff8800")
-            self.sv.set("CHE DO VE | Keo-TRAI=them o | Keo-PHAI=xoa o | Nhan Generate Maze sau khi ve.")
-        else:
-            self.draw_btn.config(text="Ve: TAT", bg="#aaaaaa")
-            self.sv.set("Click canh o=sua tuong | Click giua o=dat dich | Phai-click=xoa dich.")
+    def toggle_mode(self, name):
+        self.mode = None if self.mode == name else name
+        hints = {
+            "draw": "CHE DO VE MAP | Keo-TRAI=them o | Keo-PHAI=xoa o | Nhan Generate Maze sau khi ve.",
+            "wall": "CHE DO TUONG | Click gan canh o de them/xoa tuong.",
+            "goal": "CHE DO DICH | Click vao o bat ky de dat dich | Phai-click=xoa dich.",
+        }
+        self.sv.set(hints.get(self.mode, "Tat ca che do dang TAT. Chon 1 che do de thao tac."))
+        for k, btn in self.mode_btns.items():
+            btn.config(bg="#ff8800" if k == self.mode else "#aaaaaa")
 
     def clear_goal(self):
         self.goal = None
@@ -489,6 +497,13 @@ class MazeApp:
             self.running = False
             self.root.after(0, self._draw)
 
+    def _wall_in_dir(self, d):
+        """Co tuong theo huong d khong? True neu: co tuong thuc su, hoac o ke inactive/ngoai ban do."""
+        nx, ny = self.rx + DIR_X[d], self.ry + DIR_Y[d]
+        if not self._valid(nx, ny) or not self.active[nx][ny]:
+            return True
+        return self.walls[self.rx][self.ry][d]
+
     def _handle(self, cmd: str):
         """Xu ly 1 dong lenh tu C++. Tra ve chuoi phan hoi hoac None."""
         if not cmd: return None
@@ -504,17 +519,17 @@ class MazeApp:
 
         # --- Cam bien tuong (dua tren huong robot hien tai) ---
         if op == "wallFront":
-            return "true" if self.walls[self.rx][self.ry][self.rdir] else "false"
+            return "true" if self._wall_in_dir(self.rdir) else "false"
         if op == "wallLeft":
-            return "true" if self.walls[self.rx][self.ry][(self.rdir+3)%4] else "false"
+            return "true" if self._wall_in_dir((self.rdir+3)%4) else "false"
         if op == "wallRight":
-            return "true" if self.walls[self.rx][self.ry][(self.rdir+1)%4] else "false"
+            return "true" if self._wall_in_dir((self.rdir+1)%4) else "false"
         if op == "wallBack":
-            return "true" if self.walls[self.rx][self.ry][(self.rdir+2)%4] else "false"
+            return "true" if self._wall_in_dir((self.rdir+2)%4) else "false"
 
         # --- Dieu khien chuyen dong ---
         if op == "moveForward":
-            if self.walls[self.rx][self.ry][self.rdir]:
+            if self._wall_in_dir(self.rdir):
                 return "crash"
             self.rx += DIR_X[self.rdir]
             self.ry += DIR_Y[self.rdir]

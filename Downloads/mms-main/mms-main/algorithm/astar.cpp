@@ -109,9 +109,23 @@ static void turnToFace(int target) {
 }
 
 static void stepForward() {
-    query("moveForward");
-    robotX += DIR_X[robotDir];
-    robotY += DIR_Y[robotDir];
+    string resp = query("moveForward");
+    if (resp == "") {
+        // Di chuyen thanh cong
+        robotX += DIR_X[robotDir];
+        robotY += DIR_Y[robotDir];
+    } else {
+        // Crash: cap nhat lai tuong, o lai vi tri cu
+        // Bypass wallKnown check vi co the thong tin cu da bi loi thoi (o bi xoa sau khi scan)
+        int nx = robotX + DIR_X[robotDir], ny = robotY + DIR_Y[robotDir];
+        walls[robotX][robotY][robotDir] = true;
+        wallKnown[robotX][robotY][robotDir] = true;
+        if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
+            walls[nx][ny][(robotDir + 2) % 4] = true;
+            wallKnown[nx][ny][(robotDir + 2) % 4] = true;
+        }
+        apiSetWall(robotX, robotY, DIR_CH[robotDir]);
+    }
 }
 
 // ── Heuristic (Manhattan den o dich) ─────────────────────────────────────────
